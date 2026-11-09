@@ -4366,6 +4366,16 @@ function addFloorRow() {
   renderFloorRows();
 }
 
+function getFloorCount(start, end) {
+  const min = Math.min(start, end);
+  const max = Math.max(start, end);
+  if (min < 0 && max > 0) {
+    return (0 - min) + max; // 지하와 지상에 걸친 경우 (0층 제외)
+  } else {
+    return max - min + 1;   // 일반적인 경우
+  }
+}
+
 function removeFloorRow(id) {
   if (floorDataList.length <= 1) {
     alert("최소 1개의 층 면적 행은 유지되어야 합니다.");
@@ -4373,6 +4383,14 @@ function removeFloorRow(id) {
   }
   floorDataList = floorDataList.filter(r => r.id !== id);
   renderFloorRows();
+  
+  const totalSum = floorDataList.reduce((acc, cur) => {
+    return acc + ((cur.area || 0) * getFloorCount(cur.startFloor, cur.endFloor));
+  }, 0);
+  const bldAreaInput = document.getElementById('main_bld_area');
+  if (bldAreaInput) {
+    bldAreaInput.value = totalSum > 0 ? formatNum(totalSum) : 0;
+  }
   syncBuildingInfo();
 }
 
@@ -4383,13 +4401,21 @@ function updateFloorVal(id, field, val) {
     if (field === 'start') target.startFloor = parseInt(val) || 1;
     if (field === 'end') target.endFloor = parseInt(val) || 1;
   }
-  const totalSum = floorDataList.reduce((acc, cur) => acc + (cur.area || 0), 0);
+  
+  const totalSum = floorDataList.reduce((acc, cur) => {
+    return acc + ((cur.area || 0) * getFloorCount(cur.startFloor, cur.endFloor));
+  }, 0);
+
   if (totalSum > 0) {
     isManualTotalArea = true;
-    document.getElementById('main_bld_area').value = totalSum;
+    const bldAreaInput = document.getElementById('main_bld_area');
+    if (bldAreaInput) {
+      bldAreaInput.value = formatNum(totalSum);
+    }
   }
   syncBuildingInfo();
 }
+
 
 function handleManualAreaInput() {
   isManualTotalArea = true;
@@ -4402,18 +4428,21 @@ function syncBuildingInfo(isOccDirect = false) {
   const occInput = document.getElementById('main_bld_occ');
   const formulaBox = document.getElementById('occFormulaText');
   
+  const sumF = floorDataList.reduce((acc, cur) => {
+    return acc + ((cur.area || 0) * getFloorCount(cur.startFloor, cur.endFloor));
+  }, 0);
+
   let totalArea = parseFloat(areaInput.value) || 0;
-  const sumF = floorDataList.reduce((acc, cur) => acc + (cur.area || 0), 0);
   if (sumF > 0) {
     totalArea = sumF;
-    areaInput.value = totalArea;
+    areaInput.value = formatNum(totalArea);
   }
 
   const matchedPreset = eqPeakLoadMap[useVal] || eqPeakLoadMap['office_gen'];
   const areaPerPerson = matchedPreset.areaPer;
   const useNameStr = matchedPreset.name;
 
-if (!isOccDirect) {
+  if (!isOccDirect) {
     const calcOcc = areaPerPerson > 0 ? Math.ceil(totalArea / areaPerPerson) : 0;
     occInput.value = formatNum(calcOcc);
   }
@@ -4422,7 +4451,21 @@ if (!isOccDirect) {
     formulaBox.innerHTML = `※ <strong>대한설비공학회(SAREK) 기준</strong>: <strong>${useNameStr}</strong> [재실기준: <strong>${formatDec(areaPerPerson, 1)} ㎡/인</strong>, 냉방 <strong>${formatNum(matchedPreset.coolKcal)} kcal/h·㎡</strong>, 난방 <strong>${formatNum(matchedPreset.heatKcal)} kcal/h·㎡</strong>]`;
   }
 
-  const firstFloorArea = floorDataList.length > 0 && floorDataList[0].area > 0 ? floorDataList[0].area : totalArea;
+  let firstFloorArea = 0;
+  const row1F = floorDataList.find(r => {
+    const minF = Math.min(r.startFloor, r.endFloor);
+    const maxF = Math.max(r.startFloor, r.endFloor);
+    return minF <= 1 && maxF >= 1;
+  });
+
+  if (row1F && row1F.area > 0) {
+    firstFloorArea = row1F.area; // 지상 1층의 층당 면적
+  } else if (floorDataList.length > 0 && floorDataList[0].area > 0) {
+    firstFloorArea = floorDataList[0].area;
+  } else {
+    firstFloorArea = totalArea;
+  }
+
   const eqArea = document.getElementById('eq_area'); if(eqArea) eqArea.value = formatNum(totalArea);
 
   const fcuLoadUnitW = document.getElementById('fcu_load_unit_w');
